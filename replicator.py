@@ -6,6 +6,7 @@ import boto3
 import os
 import time
 import uuid
+import re
 from datetime import datetime
 from decimal import Decimal
 
@@ -16,12 +17,12 @@ def lambda_handler(event, context):
     # read env variables for mongodb connection
     urlDb = os.environ['mongodburl']
     database = os.environ['database']
-    table = os.environ['table']
+    rootEventSourceARN = os.environ['eventSourceARN']
+    regex = rootEventSourceARN + ":table\/(.+)\/stream.*"
 
     # configure pymongo connection
     myclient = pymongo.MongoClient(urlDb)
     mydb = myclient[database]
-    mycol = mydb[table]
 
     count = 0
 
@@ -30,6 +31,19 @@ def lambda_handler(event, context):
         for record in event['Records']:
 
             ddb = record['dynamodb']
+            eventSourceARN = record['eventSourceARN']
+            keys = re.findall(regex, eventSourceARN)
+            if (len(keys) > 0):
+                table = keys[0]
+                mycol = mydb[table]
+            else:
+                session.end_session()
+                myclient.close()
+                print('eventSourceARN is fail!')
+                return {
+                    'statusCode': 500,
+                    'body': eventSourceARN
+                }
 
             if (record['eventName'] == 'INSERT' or record['eventName'] == 'MODIFY'):
 
